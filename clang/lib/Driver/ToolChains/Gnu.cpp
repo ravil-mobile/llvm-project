@@ -670,6 +670,9 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
+  // Ravil: insert libmeters to make it always avaliable
+  CmdArgs.push_back("-lmeters");
+
   Args.AddAllArgs(CmdArgs, options::OPT_T);
 
   const char *Exec = Args.MakeArgString(ToolChain.GetLinkerPath());

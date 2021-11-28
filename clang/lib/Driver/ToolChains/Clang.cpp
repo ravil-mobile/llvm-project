@@ -4059,6 +4059,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // are provided.
   TC.addClangWarningOptions(CmdArgs);
 
+  // Ravil: enable _CLANG_PRAGMA_METER compiler definition by default
+  CmdArgs.push_back("-D_CLANG_PRAGMA_METER");
+
   // Select the appropriate action.
   RewriteKind rewriteKind = RK_None;
 

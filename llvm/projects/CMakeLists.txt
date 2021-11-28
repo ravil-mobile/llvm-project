@@ -43,6 +43,7 @@ endif()
 add_llvm_external_project(dragonegg)
 add_llvm_external_project(parallel-libs)
 add_llvm_external_project(openmp)
+add_llvm_external_project(meters)
 
 if(LLVM_INCLUDE_TESTS)
   add_llvm_external_project(debuginfo-tests)

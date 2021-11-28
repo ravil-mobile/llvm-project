@@ -173,6 +173,7 @@ class Parser : public CodeCompletionHandler {
   std::unique_ptr<PragmaHandler> OptionsHandler;
   std::unique_ptr<PragmaHandler> PackHandler;
   std::unique_ptr<PragmaHandler> MSStructHandler;
+  std::unique_ptr<PragmaHandler> MeterHandler;
   std::unique_ptr<PragmaHandler> UnusedHandler;
   std::unique_ptr<PragmaHandler> WeakHandler;
   std::unique_ptr<PragmaHandler> RedefineExtnameHandler;
@@ -2089,6 +2090,12 @@ private:
                                  ParsedStmtContext StmtCtx,
                                  SourceLocation *TrailingElseLoc,
                                  ParsedAttributesWithRange &Attrs);
+
+  /// Parse #pragma time <type> identifier [units]
+  StmtResult ParsePragmaMeter(StmtVector &Stmts,
+                              ParsedStmtContext StmtCtx,
+                              SourceLocation *TrailingElseLoc,
+                              ParsedAttributesWithRange &Attrs);
 
   /// Describes the behavior that should be taken for an __if_exists
   /// block.

@@ -1101,6 +1101,9 @@ def warn_pragma_intrinsic_builtin : Warning<
 def warn_pragma_optimize : Warning<
   "'#pragma optimize' is not supported">,
   InGroup<IgnoredPragmaOptimize>;
+// - #pragma meter
+def warn_pragma_meter : Warning<
+  "'#pragma meter' : %0">;
 // - #pragma unused
 def warn_pragma_unused_expected_var : Warning<
   "expected '#pragma unused' argument to be a variable name">,
@@ -1336,6 +1339,10 @@ def err_omp_variant_ctx_second_match_extension : Error<
   "only a single match extension allowed per OpenMP context selector">;
 def err_omp_invalid_dsa: Error<
   "data-sharing attribute '%0' in '%1' clause requires OpenMP version %2 or above">;
+
+// Pragma meter support.
+def err_pragma_meter : Error<"pragma meter: %0">;
+
 
 // Pragma loop support.
 def err_pragma_loop_missing_argument : Error<

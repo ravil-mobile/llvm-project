@@ -3152,6 +3152,25 @@ def InitSeg : Attr {
   }];
 }
 
+def Meter : Attr {
+  /// #pragma meter <option> <identifier> [units]
+  let Spellings = [Pragma<"", "meter">];
+  let Args = [EnumArgument<"Option", "OptionType",
+                          ["time"],
+                          ["Time"]>,
+              EnumArgument<"TimeUnits", "TimeUnitsType",
+                          ["sec", "msec", "usec", "nsec", "none"],
+                          ["Sec", "Msec", "Usec", "Nsec", "None"]>,
+              StringArgument<"IdentifierName">];
+  let AdditionalMembers = [{
+    void printPrettyPragma(raw_ostream &OS, const PrintingPolicy &Policy) const {
+      return;
+    }
+  }];
+  let Documentation = [Undocumented];
+}
+
+
 def LoopHint : Attr {
   /// #pragma clang loop <option> directive
   /// vectorize: vectorizes loop operations if State == Enable.

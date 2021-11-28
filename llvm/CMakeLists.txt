@@ -73,7 +73,7 @@ endif()
 # one for llvm+clang+... using the same sources.
 set(LLVM_ALL_PROJECTS "clang;clang-tools-extra;compiler-rt;debuginfo-tests;libc;libclc;libcxx;libcxxabi;libunwind;lld;lldb;mlir;openmp;parallel-libs;polly;pstl")
 # The flang project is not yet part of "all" projects (see C++ requirements)
-set(LLVM_EXTRA_PROJECTS "flang")
+set(LLVM_EXTRA_PROJECTS "flang;meters")
 # List of all known projects in the mono repo
 set(LLVM_KNOWN_PROJECTS "${LLVM_ALL_PROJECTS};${LLVM_EXTRA_PROJECTS}")
 set(LLVM_ENABLE_PROJECTS "" CACHE STRING
@@ -84,6 +84,10 @@ endif()
 if ("flang" IN_LIST LLVM_ENABLE_PROJECTS AND NOT "mlir" IN_LIST LLVM_ENABLE_PROJECTS)
   message(STATUS "Enabling MLIR as a dependency to flang")
   list(APPEND LLVM_ENABLE_PROJECTS "mlir")
+endif()
+if ("clang" IN_LIST LLVM_ENABLE_PROJECTS)
+  message(STATUS "Enabling meters sub-project as a dependency to clang")
+  list(APPEND LLVM_ENABLE_PROJECTS "meters")
 endif()
 
 # LLVM_ENABLE_PROJECTS_USED is `ON` if the user has ever used the

@@ -322,6 +322,10 @@ Retry:
     HandlePragmaVisibility();
     return StmtEmpty();
 
+  case tok::annot_pragma_meter:
+    ProhibitAttributes(Attrs);
+    return ParsePragmaMeter(Stmts, StmtCtx, TrailingElseLoc, Attrs);
+
   case tok::annot_pragma_pack:
     ProhibitAttributes(Attrs);
     HandlePragmaPack();

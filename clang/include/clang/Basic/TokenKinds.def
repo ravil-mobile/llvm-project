@@ -764,6 +764,9 @@ ANNOTATION(
 ANNOTATION(decltype)     // annotation for a decltype expression,
                          // e.g., "decltype(foo.bar())"
 
+// Annotation for #pragma meter time identifier
+ANNOTATION(pragma_meter)
+
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce
 // one 'pragma_unused' annotation token followed by the argument token.

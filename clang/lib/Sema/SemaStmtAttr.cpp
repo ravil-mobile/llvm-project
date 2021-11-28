@@ -209,6 +209,89 @@ static Attr *handleNoMergeAttr(Sema &S, Stmt *St, const ParsedAttr &A,
   return ::new (S.Context) NoMergeAttr(S.Context, A);
 }
 
+
+static Attr *handleMeterAttr(Sema &S, Stmt *St, const ParsedAttr &A,
+                             SourceRange Range) {
+  IdentifierLoc *OptionLoc = A.getArgAsIdent(0);
+  IdentifierLoc *VariableLoc = A.getArgAsIdent(1);
+
+  // check whether a valid option is provided and retrieve it
+  MeterAttr::OptionType Option{MeterAttr::OptionType::Time};
+  bool IsOptionOk = MeterAttr::ConvertStrToOptionType(OptionLoc->Ident->getName(), Option);
+  if (!IsOptionOk) {
+    S.Diag(OptionLoc->Loc, diag::err_pragma_meter_semantics)
+      << "allowed options: time";
+  }
+
+  // find a named declaration of the give identifier (`Variable`)
+  Scope * CurScope = S.getScopeForContext(S.CurContext);
+  LookupResult Result(S,
+                      DeclarationName(VariableLoc->Ident),
+                      VariableLoc->Loc,
+                      Sema::LookupNameKind::LookupOrdinaryName);
+
+  S.LookupName(Result, CurScope);
+  if (Result.getResultKind() != LookupResult::LookupResultKind::Found) {
+    S.Diag(VariableLoc->Loc, diag::err_pragma_meter_semantics)
+      << "no declaration found";
+    return nullptr;
+  }
+
+  // check whether found the named declaration is
+  // a variable declaration
+  auto* ND = Result.getFoundDecl();
+  if (ND->getKind() != Decl::Kind::Var) {
+    S.Diag(VariableLoc->Loc, diag::err_pragma_meter_semantics)
+      << "does not have a variable declaration";
+    return nullptr;
+  }
+  const auto *VD = cast<VarDecl>(ND);
+
+  // retrieve a type of the declaration and
+  // ensure that it belongs to a builtin type
+  auto* Ty = VD->getType().getTypePtr();
+  if (!Ty->isBuiltinType()) {
+    S.Diag(VariableLoc->Loc, diag::err_pragma_meter_semantics)
+      << "must be a builtin type";
+    return nullptr;
+  }
+  auto* BuiltinTy = dyn_cast<BuiltinType>(Ty);
+
+  // retrieve the initializer expression
+  const auto* InitExpr = VD->getInit();
+  assert(InitExpr != nullptr);
+
+  if (Option == MeterAttr::OptionType::Time) {
+
+    // handle units. Assign a default value if it was not provided
+    MeterAttr::TimeUnitsType TimeUnits{MeterAttr::TimeUnitsType::Sec};
+    if (A.getNumArgs() == 3) {
+      IdentifierLoc *UnitsLoc = A.getArgAsIdent(2);
+
+      bool IsUnitsOk = MeterAttr::ConvertStrToTimeUnitsType(UnitsLoc->Ident->getName(),
+                                                            TimeUnits);
+      if (!IsUnitsOk) {
+        S.Diag(UnitsLoc->Loc, diag::err_pragma_meter_semantics)
+          << "allowed units: sec, msec, usec, nsec";
+      }
+    }
+
+    // ensure that `Variable` belongs to `double` type
+    if (BuiltinTy->getKind() != BuiltinType::Kind::Double) {
+      S.Diag(VariableLoc->Loc, diag::err_pragma_meter_semantics)
+        << "expected `double` type";
+      return nullptr;
+    }
+
+    return MeterAttr::CreateImplicit(S.Context,
+                                     Option,
+                                     TimeUnits,
+                                     VariableLoc->Ident->getName(),
+                                     A);
+  }
+  return nullptr;
+}
+
 static void
 CheckForIncompatibleAttributes(Sema &S,
                                const SmallVectorImpl<const Attr *> &Attrs) {
@@ -376,6 +459,8 @@ static Attr *ProcessStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &A,
     return handleSuppressAttr(S, St, A, Range);
   case ParsedAttr::AT_NoMerge:
     return handleNoMergeAttr(S, St, A, Range);
+  case ParsedAttr::AT_Meter:
+    return handleMeterAttr(S, St, A, Range);
   default:
     // if we're here, then we parsed a known attribute, but didn't recognize
     // it as a statement attribute => it is declaration attribute

@@ -64,6 +64,14 @@ struct PragmaMSStructHandler : public PragmaHandler {
                     Token &FirstToken) override;
 };
 
+  struct PragmaMeterHandler : public PragmaHandler {
+    PragmaMeterHandler() : PragmaHandler("meter") {}
+    void HandlePragma(Preprocessor &PP, PragmaIntroducer Introducer,
+                      Token &FirstToken) override;
+  };
+
+
+
 struct PragmaUnusedHandler : public PragmaHandler {
   PragmaUnusedHandler() : PragmaHandler("unused") {}
   void HandlePragma(Preprocessor &PP, PragmaIntroducer Introducer,
@@ -300,6 +308,9 @@ void Parser::initializePragmaHandlers() {
   MSStructHandler = std::make_unique<PragmaMSStructHandler>();
   PP.AddPragmaHandler(MSStructHandler.get());
 
+  MeterHandler = std::make_unique<PragmaMeterHandler>();
+  PP.AddPragmaHandler(MeterHandler.get());
+
   UnusedHandler = std::make_unique<PragmaUnusedHandler>();
   PP.AddPragmaHandler(UnusedHandler.get());
 
@@ -424,6 +435,8 @@ void Parser::resetPragmaHandlers() {
   PackHandler.reset();
   PP.RemovePragmaHandler(MSStructHandler.get());
   MSStructHandler.reset();
+  PP.RemovePragmaHandler(MeterHandler.get());
+  MeterHandler.reset();
   PP.RemovePragmaHandler(UnusedHandler.get());
   UnusedHandler.reset();
   PP.RemovePragmaHandler(WeakHandler.get());
@@ -552,6 +565,84 @@ struct PragmaPackInfo {
   Token Alignment;
 };
 } // end anonymous namespace
+
+
+namespace {
+  struct PragmaLexerMeterInfo {
+    Token PragmaName;
+    ArrayRef<Token> Toks;
+  };
+}
+
+// #pragma meter <type> identifier [units]
+StmtResult Parser::ParsePragmaMeter(StmtVector &Stmts,
+                                    ParsedStmtContext StmtCtx,
+                                    SourceLocation *TrailingElseLoc,
+                                    ParsedAttributesWithRange &Attrs) {
+  // Tok must point to our injected (annotated) token
+  assert(Tok.is(tok::annot_pragma_meter));
+
+  auto Info = static_cast<PragmaLexerMeterInfo*>(Tok.getAnnotationValue());
+  ConsumeAnnotationToken();
+
+  // perform basic checks
+  auto Where = Info->PragmaName.getLocation();
+  if (Info->Toks.size() < 2) {
+    Diag(Where, diag::err_pragma_meter) << "expected at least 2 tokens";
+  }
+
+  if (Info->Toks.size() > 3) {
+    Diag(Where, diag::err_pragma_meter) << "expected at most 3 tokens";
+  }
+
+  // collect all locations and build an argument list
+  std::vector<ArgsUnion> Args;
+  for(auto& ArgToken: Info->Toks) {
+    Where = ArgToken.getLocation();
+
+    if (ArgToken.is(tok::identifier)) {
+      auto *ArgInfo = ArgToken.getIdentifierInfo();
+      auto *ArgLoc = IdentifierLoc::create(Actions.Context, Where, ArgInfo);
+      Args.emplace_back(ArgLoc);
+    }
+    else {
+      Diag(Where, diag::err_pragma_meter) << "expected an identifier";
+    }
+  }
+
+  auto *PragmaNameInfo = Info->PragmaName.getIdentifierInfo();
+  auto *PragmaNameLoc = IdentifierLoc::create(Actions.Context,
+                                              Info->PragmaName.getLocation(),
+                                              PragmaNameInfo);
+
+  SourceRange Range(Info->PragmaName.getLocation(), Info->Toks.back().getLocation());
+
+
+  // Create temporary attribute list
+  ParsedAttributesWithRange TempAttrs(AttrFactory);
+  TempAttrs.addNew(PragmaNameLoc->Ident, Range, nullptr,
+                   PragmaNameLoc->Loc, Args.data(), Args.size(),
+                   ParsedAttr::Syntax::AS_Pragma);
+
+  // Get the next statement
+  MaybeParseCXX11Attributes(Attrs);
+  StmtResult NextStmt = ParseStatementOrDeclarationAfterAttributes(
+      Stmts, StmtCtx, TrailingElseLoc, Attrs);
+
+  // check next statement
+  if (NextStmt.isUsable()) {
+    if (NextStmt.get()->getStmtClass() != Stmt::CompoundStmtClass) {
+      Where = NextStmt.get()->getBeginLoc();
+      Diag(Where, diag::warn_pragma_meter) << "must follow a compound statement";
+    }
+  }
+  else {
+    Diag(Where, diag::warn_pragma_meter) << "next statement is unusable";
+  }
+
+  Attrs.takeAllFrom(TempAttrs);
+  return NextStmt;
+}
 
 void Parser::HandlePragmaPack() {
   assert(Tok.is(tok::annot_pragma_pack));
@@ -1971,6 +2062,41 @@ void PragmaOptionsHandler::HandlePragma(Preprocessor &PP,
                                         PragmaIntroducer Introducer,
                                         Token &OptionsTok) {
   ParseAlignPragma(PP, OptionsTok, /*IsOptions=*/true);
+}
+
+// #pragma meter time identifier
+void PragmaMeterHandler::HandlePragma(Preprocessor &PP,
+                                      PragmaIntroducer Introducer,
+                                      Token &Tok) {
+
+
+
+  // see definition of `PragmaLexerMeterInfo` above
+  auto& Allocator = PP.getPreprocessorAllocator();
+  auto *Info = new (Allocator) PragmaLexerMeterInfo;
+
+  Info->PragmaName = Tok;
+
+  SmallVector<Token, 1> TokenVector;
+  PP.Lex(Tok);
+  while (Tok.isNot(tok::eod)) {
+    TokenVector.push_back(Tok);
+    PP.Lex(Tok);
+  }
+
+
+  Info->Toks = llvm::makeArrayRef(TokenVector).copy(Allocator);
+
+  // Create a new token with `tok::annot_pragma_meter` value
+  // which we are going to inject back to the token stream
+  Token AnnotatedTok;
+  AnnotatedTok.startToken();
+  AnnotatedTok.setKind(tok::annot_pragma_meter);
+  AnnotatedTok.setLocation(Info->PragmaName.getLocation());
+  AnnotatedTok.setAnnotationEndLoc(Info->PragmaName.getLocation());
+  AnnotatedTok.setAnnotationValue(static_cast<void *>(Info));
+
+  PP.EnterToken(AnnotatedTok, /*IsReinject=*/false);
 }
 
 // #pragma unused(identifier)

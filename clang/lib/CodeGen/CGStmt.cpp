@@ -49,6 +49,17 @@ void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
   assert(S && "Null statement?");
   PGO.setCurrentStmt(S);
 
+
+  if (Attrs.size() > 0) {
+    // TODO: what if a statement has more attached attributes
+    if (Attrs[0]->getKind() == attr::Meter) {
+      assert(S->getStmtClass() == Stmt::CompoundStmtClass);
+      InsertMeter(cast<CompoundStmt>(S), Attrs[0]);
+      return;
+    }
+  }
+
+
   // These statements have their own debug info handling.
   if (EmitSimpleStmt(S))
     return;
@@ -402,6 +413,85 @@ Address CodeGenFunction::EmitCompoundStmt(const CompoundStmt &S, bool GetLast,
   LexicalScope Scope(*this, S.getSourceRange());
 
   return EmitCompoundStmtWithoutScope(S, GetLast, AggSlot);
+}
+
+#include "llvm/IR/ValueSymbolTable.h" // TODO(Ravil): place on the top
+void CodeGenFunction::InsertMeter(const CompoundStmt *S, const Attr * At) {
+
+  const auto *Meter = cast<MeterAttr>(At);
+  // the last instruction before a compound statement
+  // has been inserted
+
+  // create a definition of `Time` structure
+  auto* Int64Ty = llvm::Type::getInt64Ty(getLLVMContext());
+  SmallVector<llvm::Type *, 1> Elements = {Int64Ty, Int64Ty};
+  auto* TimeTy = llvm::StructType::create(getLLVMContext(),
+                                          Elements,
+                                          "struct.clangmeterslib_Time",
+                                          false);
+  auto* TimeTyPtr = llvm::PointerType::get(TimeTy, 0);
+
+  // allocate `start` and `end` variables
+  auto* Start = Builder.CreateAlloca(TimeTy);
+  auto* End = Builder.CreateAlloca(TimeTy);
+
+  // create a definition of `getCurrentTime` function
+  auto* VoidTy = llvm::Type::getVoidTy(getLLVMContext());
+  auto& CurrentModule = CGM.getModule();
+  auto *GetCurrTimeTy = llvm::FunctionType::get(VoidTy, std::vector<llvm::Type*>{TimeTyPtr}, false);
+  auto *GetCurrTime = llvm::Function::Create(GetCurrTimeTy,
+                                             llvm::Function::ExternalLinkage,
+                                             "clangmeterslib_getCurrentTime",
+                                             &CurrentModule);
+
+  // store time right before executing a compound statement
+  Builder.CreateCall(GetCurrTimeTy, GetCurrTime, std::vector<llvm::Value*>{Start});
+
+
+  // Emit code for a compound statement i.e., { <code> }
+  EmitCompoundStmt(*S);
+
+
+  auto* EndBB = Builder.GetInsertBlock();
+  auto *CurrFunction = EndBB->getParent();
+  auto *Table = CurrFunction->getValueSymbolTable();
+
+  // Note, during the semantic analysis of `meter` pragma
+  // we've already checked that `IdentifierName` is
+  // a variable, declared somewhere above and
+  // belongs to `double` type
+  auto IdentifierName = Meter->getIdentifierName();
+  auto *TargetPtr = Table->lookup(IdentifierName);
+  assert(TargetPtr != nullptr);
+
+  // store time right after a compound statement execution
+  Builder.CreateCall(GetCurrTimeTy, GetCurrTime, std::vector<llvm::Value*>{End});
+
+  // create a definition of `getDuration` function
+  auto* DoubleTy = llvm::Type::getDoubleTy(getLLVMContext());
+  auto* Int32Ty = llvm::Type::getInt32Ty(getLLVMContext());
+  auto *GetDurationTy =
+      llvm::FunctionType::get(DoubleTy,
+                              std::vector<llvm::Type*>{TimeTyPtr, TimeTyPtr, Int32Ty},
+                              false);
+
+  auto *GetDuration = llvm::Function::Create(GetDurationTy,
+                                             llvm::Function::ExternalLinkage,
+                                             "clangmeterslib_getDuration",
+                                             &CurrentModule);
+
+  // Generate an immediate constant which is going to hold `TimeUnits` encoding
+  auto *TimeUnits = llvm::ConstantInt::get(Int32Ty,
+                                           static_cast<uint64_t>(Meter->getTimeUnits()),
+                                           true);
+
+  // call `getDuration`
+  llvm::Value *DurationValue = Builder.CreateCall(GetDurationTy,
+                                                  GetDuration,
+                                                  std::vector<llvm::Value*>{Start, End, TimeUnits});
+
+  // save a resultant value to the target variable
+  Builder.CreateAlignedStore(DurationValue, TargetPtr, CGM.getPointerAlign());
 }
 
 Address
